@@ -1,7 +1,7 @@
 
 // 棋盘类
 class Board{
-    constructor(canvas_id, x, y, width, height){
+    constructor(canvas_id, x, y, width, height, isRed = false){
         /** @type {HTMLCanvasElement} */
         this.element = document.getElementById(canvas_id);
         if (!this.element) throw new Error("canvas id错误！")
@@ -19,13 +19,13 @@ class Board{
         // g*8+5*g/12*2 <= w
         this.gridWidth = 0; // 每个格子的宽
         if(height>width){
-            this.gridWidth = Math.floor(width/(8+5/12*2))
+            this.gridWidth = Math.floor(width/(8+5/12*2))-1
         }else{
-            this.gridWidth = Math.floor(height/(9+5/12*2))
+            this.gridWidth = Math.floor(height/(9+5/12*2))-1
         }
         this.radius = Math.ceil(5*this.gridWidth/12); // 每个棋子的半径
-        this.startX = x+this.radius; // 棋盘x坐标
-        this.startY = y+this.radius; // 棋盘y坐标
+        this.startX = x+this.radius+2; // 棋盘x坐标
+        this.startY = y+this.radius+2; // 棋盘y坐标
 
         this.chess_map = {
             1:'車', 2:'马', 3:'相', 4:'仕', 5:'帅',6:'炮',7:'兵',// 红方
@@ -80,7 +80,18 @@ class Board{
                 }
             }
         })
+
+        this.isRed = isRed; // 当前棋盘下方是否是红方
+        if(isRed){// 默认上方是红方
+            for(let i=0;i<Math.floor(this.board_map.length/2);i++){
+                const tmp = this.board_map[i];
+                this.board_map[i] = this.board_map[this.board_map.length-i-1]
+                this.board_map[this.board_map.length-i-1] = tmp;
+            }
+        }
     }
+
+
 
     /**
      * 注册点击回调函数
@@ -96,7 +107,7 @@ class Board{
     renderAll(){
         this.context.strokeStyle = 'black';
 
-        let gridWidth = this.gridWidth;
+        const gridWidth = this.gridWidth;
 
         // 清空画布
         this.context.clearRect(this.rawX, this.rawY, this.rawWidth, this.rawHeight);
@@ -127,6 +138,17 @@ class Board{
                 }else this.context.strokeRect(this.startX+i*gridWidth, this.startY+j*gridWidth, gridWidth, gridWidth);
             }
         }
+
+        // 画宫标记
+        let palaceMap = [[3, 0, 5, 2], [5, 0, 3, 2], [3, 9, 5, 7], [5, 9, 3, 7]]
+        this.context.beginPath();
+        palaceMap.forEach((pos)=>{
+            let [sx, sy, tx, ty] = pos;
+            this.context.moveTo(sx*gridWidth+this.startX, sy*gridWidth+this.startY);
+            this.context.lineTo(tx*gridWidth+this.startX, ty*gridWidth+this.startY);
+        })
+        this.context.stroke();
+        this.context.closePath();
 
         //画标记
         let signs = [
@@ -204,6 +226,22 @@ class Board{
         //this.context.fillRect(this.rawX, this.rawY, this.rawWidth, this.rawHeight);
     }
 
+    renderNextStep(posList){
+        this.context.beginPath();
+        this.context.fillStyle = 'red';
+        posList.forEach((pos)=>{
+            let x = pos[0]*this.gridWidth+this.startX, y = pos[1]*this.gridWidth+this.startY;
+            this.context.moveTo(x, y);
+            this.context.arc(x, y, this.radius/3, 0, 2*Math.PI);
+        })
+        this.context.fill();
+        this.context.closePath();
+        // 重置样式
+        for(let k in this.oldStyle){
+            this.context[k] = this.oldStyle[k];
+        }
+    }
+
     /**
      * 判断是否是红方的回合
      * @returns 返回是否是红方的回合 
@@ -273,6 +311,17 @@ class ChessRule{
     }
 
     /**
+     * 判断两个棋子是否是同色的
+     * @param {int} 棋子1
+     * @param {int} 棋子2 
+     * @returns 同色则返回true，否则false
+     */
+     isFriend(chess1, chess2){
+        return chess1*chess2!=0 && (chess1-10)*(chess2-10)>0
+    }
+
+
+    /**
      * 返回当前棋子下一步所有可行的着子位置
      * @param {int} sx 当前棋子x坐标
      * @param {int} sy 当前棋子y坐标
@@ -320,7 +369,7 @@ class ChessRule{
                 let tx = x+dx, ty = y+dy;
                 let tmp = this.board.board_map[ty][tx];
                 if(tmp === undefined) return;
-                else if(tmp == 0||!this.board.isFriend(chess, tmp)){
+                else if(tmp == 0||!this.isFriend(chess, tmp)){
                     //判断是否别马腿
                     dx = (dx/Math.abs(dx))*(Math.abs(dx)-1);
                     dy = (dy/Math.abs(dy))*(Math.abs(dy)-1);
@@ -344,7 +393,7 @@ class ChessRule{
                     const tmp = this.board.board_map[ty][tx];
                     if(tmp===undefined) return;
                     if(tmp === 0) ret.push([tx, ty]);
-                    else if(!this.board.isFriend(chess, tmp)){
+                    else if(!this.isFriend(chess, tmp)){
                         ret.push([tx, ty]);
                         return;
                     }else{
@@ -359,42 +408,168 @@ class ChessRule{
     }
 
     _xiangRule(chess, x, y){
+        let ret = [];
+        let directMap = [[2, 2], [-2, 2], [2, -2], [-2, -2]];
+        directMap.forEach((d)=>{
+            try{
+                let [dx, dy] = d;
+                let tx = x+dx, ty = y+dy;
+                let tmp = this.board.board_map[ty][tx];
+                if(tmp === undefined) return;
+                else if(tmp == 0||!this.isFriend(chess, tmp)){
+                    // 判断是否过河，象不能过河
+                    if(!(ty>4&&y>4||9-ty>4&&9-y>4)) return;
 
+                    //判断是否别象眼
+                    dx = (dx/Math.abs(dx))*(Math.abs(dx)-1);
+                    dy = (dy/Math.abs(dy))*(Math.abs(dy)-1);
+                    let mx = x+dx, my = y+dy;
+                    tmp = this.board.board_map[my][mx];
+                    if(tmp === 0) ret.push([tx, ty]);
+                }
+            }catch{}
+        })
+        return ret;
     }
 
     _shiRule(chess, x, y){
-        
+        let ret = [];
+        let directMap = [[1, 1], [-1, 1], [1, -1], [-1, -1]];
+        directMap.forEach((d)=>{
+            try{
+                let [dx, dy] = d;
+                let tx = x+dx, ty = y+dy;
+                let tmp = this.board.board_map[ty][tx];
+                if(tmp === undefined) return;
+                else if(tmp == 0||!this.isFriend(chess, tmp)){
+                    // 判断是否出宫，士不能出宫
+                    if(tx>2&&tx<6&&(ty>=0&&ty<=2||ty>=7&&ty<=9)){
+                        ret.push([tx, ty]);
+                    }
+                }
+            }catch{}
+        })
+        return ret;
     }
 
     _jiangRule(chess, x, y){
-        
+        let ret = [];
+        let directMap = [[1, 0], [-1, 0], [0, -1], [0, 1]];
+        directMap.forEach((d)=>{
+            try{
+                let [dx, dy] = d;
+                let tx = x+dx, ty = y+dy;
+                let tmp = this.board.board_map[ty][tx];
+                if(tmp === undefined) return;
+                else if(tmp == 0||!this.isFriend(chess, tmp)){
+                    // 判断是否出宫，将不能出宫
+                    if(tx>2&&tx<6&&(ty>=0&&ty<=2||ty>=7&&ty<=9)){
+                        ret.push([tx, ty]);
+                    }
+                }
+            }catch{}
+        })
+        return ret;
     }
 
     _paoRule(chess, x, y){
-        
+        let ret = [];
+        let directMap = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+        directMap.forEach((d)=>{
+            const [dx, dy] = d;
+            for(let i=1;i<10;i++){
+                const tx = dx*i+x, ty = dy*i+y;
+                try{
+                    let tmp = this.board.board_map[ty][tx];
+                    if(tmp===undefined) return;
+                    if(tmp === 0) ret.push([tx, ty]);
+                    else{
+                        //判断炮是否可以打子
+                        for(let j=1;j<10;j++){
+                            const mx = dx*j+tx, my = dy*j+ty;
+                            tmp = this.board.board_map[my][mx];
+                            if(tmp === undefined) return;
+                            else if(tmp === 0) continue;
+                            else if(!this.isFriend(chess, tmp)){
+                                ret.push([mx, my]);
+                                return;
+                            }else{
+                                return;
+                            }
+                        }
+                    }
+                }catch{
+                    return;
+                }
+            }
+        })
+        return ret;
     }
 
     _bingRule(chess, x, y){
-        
-    }
+        let ret = [];
+        let directMap = [];
+        let s = (chess-10)/Math.abs(chess-10); // 红棋为-1，蓝棋为+1
+        s = this.board.isRed?s:-s; // 兵的行进方向
+        directMap.push([0, s]);
+        if((y<5&&s<0)||(y>=5&&s>0)){
+            directMap.push([1, 0], [-1, 0]);
+        }
 
-    check(chess, sx, sy, tx, ty){
-
+        directMap.forEach((d)=>{
+            try{
+                let [dx, dy] = d;
+                let tx = x+dx, ty = y+dy;
+                let tmp = this.board.board_map[ty][tx];
+                if(tmp === undefined) return;
+                else if(tmp == 0||!this.isFriend(chess, tmp)){
+                    ret.push([tx, ty]);
+                }
+            }catch{}
+        })
+        return ret;
     }
 }
 
 // 主类
 class ChineseChess{
     constructor(canvas_id){
-        this.board = new Board(canvas_id, 10, 10, 540, 600);
+        this.board = new Board(canvas_id, 10, 10, 540, 600, true);
         this.rule = new ChessRule(this.board);
         this.board.registerClickCallback((chess, x, y)=>{
             if(chess == 0) return;
-            console.log(this.rule.nextStep(x, y));
+
             this.board.selectChess(x, y);
             this.board.renderAll();
+            this.board.renderNextStep(this.rule.nextStep(x, y));
         });
         this.board.renderAll();
+    }
+
+    manVsMan(){
+        this.lastClick = [];
+        this.lastPos = [];
+        this.board.registerClickCallback((chess, x, y)=>{
+            if(this.lastClick.length == 0){
+                this.lastClick = this.rule.nextStep(x, y);
+                this.lastPos = [x, y];
+            }else{
+                let r = this.lastClick.some((pos)=>{
+                    if(pos[0] === x && pos[1] === y){
+                        this.board.step(this.lastPos[0], this.lastPos[1], x, y);
+                        this.board.renderAll();
+                        this.lastClick = [];
+                        this.lastPos = [];
+                        return true;
+                    }
+                    return false;
+                })
+                if(chess != 0 && !r){
+                    this.lastClick = this.rule.nextStep(x, y);
+                    this.lastPos = [x, y];
+                }
+            }
+        })
     }
 
 }

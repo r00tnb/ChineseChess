@@ -533,40 +533,85 @@ class ChessRule{
 
 // 主类
 class ChineseChess{
-    constructor(canvas_id){
-        this.board = new Board(canvas_id, 10, 10, 540, 600, true);
+    constructor(canvas_id, ai1, ai2){
+        this.redRound = true;//是否该红方着子
+
+        this.board = new Board(canvas_id, 10, 10, 540, 600, this.redRound);
         this.rule = new ChessRule(this.board);
         this.board.registerClickCallback((chess, x, y)=>{
             if(chess == 0) return;
-
             this.board.selectChess(x, y);
             this.board.renderAll();
-            this.board.renderNextStep(this.rule.nextStep(x, y));
+            const a = this.rule.nextStep(x, y);
+            console.log(a);
+            this.board.renderNextStep(a);
         });
         this.board.renderAll();
+
+        /** @type {string} */
+        this.red_api = document.getElementById(ai1).value;// 红方
+        /** @type {string} */
+        this.blue_api = document.getElementById(ai2).value;// 蓝方
+
+        if(this.red_api === '' || this.blue_api === ''){
+            this.human(this.red_api?false:true);
+        }
     }
 
-    manVsMan(){
+    run(){
+        let api = this.redRound?this.red_api:this.blue_api;
+        if(api === ''){
+            // 人类
+            return;
+        }else{
+            // ai
+            fetch(api, {
+                method:'POST',
+                body:JSON.stringify({
+                    chessboard:this.board.board_map,
+                    round:this.redRound?'red':'blue'
+                })
+            }).then((res)=>{
+                if(res.ok){
+                    res.json().then((data)=>{
+                        let [sx, sy, tx, ty] = data;
+                        this.board.step(sx, sy, tx, ty);
+                        this.board.renderAll();
+                        this.redRound = !this.redRound;
+                        this.run();
+                    })
+                }
+            })
+        }
+    }
+
+
+    human(red){
         this.lastClick = [];
         this.lastPos = [];
         this.board.registerClickCallback((chess, x, y)=>{
-            if(this.lastClick.length == 0){
-                this.lastClick = this.rule.nextStep(x, y);
-                this.lastPos = [x, y];
-            }else{
-                let r = this.lastClick.some((pos)=>{
-                    if(pos[0] === x && pos[1] === y){
-                        this.board.step(this.lastPos[0], this.lastPos[1], x, y);
-                        this.board.renderAll();
-                        this.lastClick = [];
-                        this.lastPos = [];
-                        return true;
-                    }
-                    return false;
-                })
-                if(chess != 0 && !r){
+            if(this.redRound && red || !this.redRound && !red){
+                if(this.lastClick.length == 0){
                     this.lastClick = this.rule.nextStep(x, y);
                     this.lastPos = [x, y];
+                }else{
+                    let r = this.lastClick.some((pos)=>{
+                        if(pos[0] === x && pos[1] === y){
+                            this.board.step(this.lastPos[0], this.lastPos[1], x, y);
+                            this.board.renderAll();
+                            this.lastClick = [];
+                            this.lastPos = [];
+                            
+                            this.redRound = !this.redRound;
+                            this.run();
+                            return true;
+                        }
+                        return false;
+                    })
+                    if(chess != 0 && !r){
+                        this.lastClick = this.rule.nextStep(x, y);
+                        this.lastPos = [x, y];
+                    }
                 }
             }
         })

@@ -13,9 +13,16 @@
     <canvas id="board" width="600" height="650" style="background-color:beige;">
         当前浏览器不支持canvas标签
     </canvas>
-    <script>
-        var game = new ChineseChess('board');
-        game.manVsMan();
+    <div>
+        ai 1号：<input id="ai1" />
+        ai 2号：<input id="ai2" />
+        <button onclick="run()">开始</button>
+    </div>
+    <script>        
+        function run(){
+            var game = new ChineseChess('board', 'ai1', 'ai2');
+            game.run();
+        }
     </script>
 </body>
 
